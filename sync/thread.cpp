@@ -363,8 +363,10 @@ static map<int, semaphore>::iterator it;
 
 int sem_init(sem_t *sem, int pshared, unsigned int value){
 	//cout<<"int sema init"<<endl;
+	lock();
 	if(pshared!=0){
 		perror("pshared should be 0");
+		unlock();
 		return ENOSYS;
 	}
 	semaphore s;
@@ -375,34 +377,41 @@ int sem_init(sem_t *sem, int pshared, unsigned int value){
 	sema_counter++;
 	if(value > SEMA_MAX){
 		perror("semaphore value too large");
+		unlock();
 		return EINVAL;
 	}
 	s.val=value;		
 	sema_pool.emplace(s.id, s);
 	sem->__align=s.id;
 
+	unlock();
 	return 0;
 }
 
 int sem_destroy(sem_t *sem){
 	//cout<<"in sem desotry"<<endl;
+	lock();
 	int target_id=sem->__align;
 	it = sema_pool.find(target_id);
 	if(it==sema_pool.end()){
 		perror("semaphore not found");
+		unlock();
 		return EINVAL;
 	}
 	if(it->second.initialized!=1){
 		perror("Is not initialized and thus can not be destoried");
+		unlock();
 		return EINVAL;
 	}
 	sema_pool.erase(target_id);
+	unlock();
 	return 0;
 
 }
 int sem_wait(sem_t *sem){
 	
 	//cout<<"in wait"<<endl;
+	lock();
 	int target_id=sem->__align;
 	//cout<<"sema target id is: "<<target_id<<endl;
 	
@@ -410,31 +419,37 @@ int sem_wait(sem_t *sem){
 	
 	if(sema_pool.count(target_id)==0){
                 perror("in wait semaphore not found");
-                return EINVAL;
+                unlock();
+		return EINVAL;
         }
 
 	if(it->second.val>0){
 		it->second.val-=1;
+		unlock();
 		return 0;
 	}
 	curr->second.status=T_WAIT;
 	it->second.waitlist.push(curr->second.id);
+	unlock();
 	thread_switch(1);
 	return 0;
 }
 int sem_post(sem_t *sem){
 	//cout<<"in post"<<endl;
+	lock();
 	int target_id=sem->__align;
         it = sema_pool.find(target_id);
         if(sema_pool.count(target_id) == 0){
                 perror("semaphore not found");
-                return EINVAL;
+                unlock();
+		return EINVAL;
         }
 
 	if(it->second.val>0){
 		it->second.val++;
 		if(it->second.val>SEMA_MAX){
 			perror("val too large");
+			unlock();
 			return EOVERFLOW;
 		}
 		return 0;
@@ -446,11 +461,12 @@ int sem_post(sem_t *sem){
 		it->second.waitlist.pop();
 		map<pthread_t,thread>::iterator target=thread_pool.find(target_id);
 		target->second.status=T_BLOCK;
+		unlock();
 		return 0;
 	}
 	
 	it->second.val++;
-
+	unlock();
 	return 0;
 }
 
